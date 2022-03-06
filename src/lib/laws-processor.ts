@@ -1,48 +1,110 @@
-import type { ChLaw, Law } from "../type/index.type";
-import { chLaw } from "./ch-law";
+import type { Law } from "../type/index.type";
+import {
+  getAliases,
+  getLatestUpdateRecord,
+  getLaws,
+  initDB,
+  putAlias,
+  putManyAliases,
+  putManyLaws,
+  putUpdateRecord,
+} from "./idb";
+import { fetchChLaw } from "./fetchChLaw";
 
-const laws = chLawProcessor(chLaw as ChLaw);
+let ready = false;
+let laws: Law[];
+let aliases: { [key: string]: string[] };
+let callbackList: Function[] = [];
 
-function chLawProcessor(chLaw: ChLaw): Law[] {
-  const alias = {
-    中華民國憲法: "const,憲法,醜逼",
-    民法: "civil,民",
-  };
-  // 各法律
-  const laws = chLaw.Laws;
-  let rnMax = 0;
-  let rnCount;
-  let rnMaxA;
+// because top-level await is not supported.
+(async () => {
+  try {
+    const dbExists = await initDB();
+    if (dbExists) {
+      laws = await getLaws();
+      aliases = await getAliases();
+      console.log(Object.keys(aliases));
+      laws.forEach((law) => {
+        law.LawAlias = aliases[law.LawName];
+      });
+    } else {
+      // i.e. open initialize db
+      console.log("db not found, start initialize...");
+      const chLaw = await fetchChLaw();
+      const result = preprocess(chLaw.Laws);
+      aliases = result.aliases;
+      laws = result.laws;
+      putUpdateRecord(chLaw.UpdateDate);
+      putManyLaws(laws);
+      putManyAliases(aliases);
+    }
 
-  let id = 0;
-  for (const l of laws) {
-    id += 1;
-    // Add alias
-    l.LawAlias = alias[l.LawName]
-      ? l.LawName.concat("," + alias[l.LawName])
-      : l.LawName.concat(",");
-    // L.LawUid = nanoid();
+    ready = true;
 
-    // 第 xx 條 => xx
-    const articles = l.LawArticles;
+    callbackList.forEach((callback) => {
+      callback();
+    });
+  } catch (err) {
+    console.log(err);
+  }
+})();
 
-    for (const a of articles) {
+function preprocess(laws: Law[]) {
+  const aliases = {};
+  laws.forEach((law) => {
+    law.LawArticles.forEach((a) => {
+      // 第 1 條 => 1
       a.ArticleNo = a.ArticleNo.slice(2, -2);
+
+      // 內文分項
       const regex =
         /\r\n(?![一二三四五六七八九十]{1,3}[、\s]|[┌┐├│]|(?:\s\s){0,1}第\s\d[\d\s]\s|（[一二三四五六七八九十]）|\s\s（[一二三四五六七八九十]）)/;
       a.ArticleContents = a.ArticleContent.split(regex);
-      rnCount = (a.ArticleContent.match(new RegExp(regex, "g")) || []).length;
-      // Delete a.ArticleContent;
-      if (rnCount > rnMax) {
-        rnMaxA = a;
-        rnMax = rnCount;
-      }
-    }
-  }
 
-  console.log("rnMax:", rnMax);
-  console.log("rnMaxA:", rnMaxA);
-  return laws;
+      // add alias
+      law.LawAlias = [law.LawName];
+      aliases[law.LawName] = [law.LawName];
+    });
+  });
+
+  return { aliases, laws };
 }
 
-export { laws };
+export function onReady(callback: Function) {
+  if (ready) {
+    callback();
+    return;
+  }
+
+  callbackList.push(callback);
+}
+
+export async function updateChLaw() {
+  if (!ready) {
+    throw new Error("Data is not loaded yet.");
+  }
+
+  const [chLaw, record] = await Promise.all([
+    fetchChLaw(),
+    getLatestUpdateRecord(),
+  ]);
+  if (record && record.date === chLaw.UpdateDate) {
+    return { date: record.date, msg: "No need to update" };
+  }
+
+  const result = preprocess(chLaw.Laws);
+  laws = result.laws;
+  laws.forEach(({ LawName }) => {
+    // new chLaw has new law
+    if (!aliases.hasOwnProperty(LawName)) {
+      putAlias(LawName, [LawName]);
+    }
+  });
+  const a = putUpdateRecord(chLaw.UpdateDate);
+  const b = putManyLaws(laws);
+  const c = putManyAliases(aliases);
+
+  await Promise.all([a, b, c]);
+}
+
+export { laws, aliases };

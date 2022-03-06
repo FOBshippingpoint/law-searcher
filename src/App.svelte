@@ -1,62 +1,44 @@
 <script lang="ts">
-  import logo from "./assets/svelte.png";
+  import Popup from "./popup/Popup.svelte";
+  import Options from "./options/Options.svelte";
+  import Search16 from "carbon-icons-svelte/lib/Search16";
+  import Settings16 from "carbon-icons-svelte/lib/Settings16";
+  import { Button } from "carbon-components-svelte";
+  import { Breakpoint } from "carbon-components-svelte";
+
+  let size;
+  let events = [];
+  let page = "popup";
 </script>
 
+<Breakpoint bind:size on:match={(e) => (events = [...events, e.detail])} />
+
 <main>
-  <img src={logo} alt="Svelte Logo" />
-  <h1>Hello Typescript!</h1>
-
-  <p>
-    Visit <a href="https://svelte.dev">svelte.dev</a> to learn how to build Svelte
-    apps.
-  </p>
-
-  <p>
-    Check out <a href="https://github.com/sveltejs/kit#readme">SvelteKit</a> for
-    the officially supported framework, also powered by Vite!
-  </p>
+  <Button
+    size="small"
+    kind="secondary"
+    icon={page === "popup" ? Settings16 : Search16}
+    on:click={() => {
+      page = page === "popup" ? "options" : "popup";
+    }}>{page === "popup" ? "設定頁面" : "搜尋頁面"}</Button
+  >
+  <section class={size}>
+    {#if page === "popup"}
+      <Popup isWebpage />
+    {:else}
+      <Options />
+    {/if}
+  </section>
 </main>
 
 <style>
-  :root {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-      Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  .max {
+    margin: 0 20%;
   }
-
-  main {
-    text-align: center;
-    padding: 1em;
-    margin: 0 auto;
+  .xlg {
+    margin: 0 20%;
   }
-
-  img {
-    height: 16rem;
-    width: 16rem;
-  }
-
-  h1 {
-    color: #ff3e00;
-    text-transform: uppercase;
-    font-size: 4rem;
-    font-weight: 100;
-    line-height: 1.1;
-    margin: 2rem auto;
-    max-width: 14rem;
-  }
-
-  p {
-    max-width: 14rem;
-    margin: 1rem auto;
-    line-height: 1.35;
-  }
-
-  @media (min-width: 480px) {
-    h1 {
-      max-width: none;
-    }
-
-    p {
-      max-width: none;
-    }
+  .lg {
+    margin: 0 10%;
   }
 </style>

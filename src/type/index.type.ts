@@ -10,7 +10,7 @@ export type LawArticle = {
 
 export type Law = {
   Score?: number;
-  LawAlias?: string;
+  LawAlias?: string[];
   LawLevel: string;
   LawName: string;
   LawURL: string;
@@ -48,3 +48,7 @@ export type LawResult = {
 } | null;
 
 export type LawNameMap = Map<string, string>;
+
+export type Aliases = {
+  [key: string]: string[];
+};

@@ -1,26 +1,16 @@
-# idb
-
-## schema
-
-- Law
-  - key: LawName
-  - value:
-    LawAlias?: string;
-    LawLevel: string;
-    LawName: string;
-    LawURL: string;
-    LawCategory: string;
-    LawModifiedDate: string;
-    LawEffectiveDate: string;
-    LawEffectiveNote: string;
-    LawAbandonNote: string;
-    LawHasEngVersion: string;
-    EngLawName: string;
-    LawAttachements: Array<{
-    FileName: string;
-    FileURL: string;
-    }>;
-    LawHistories: string;
-    LawForeword: string;
-    LawArticles: LawArticle[];
-  - indexes
+- 無輸入
+  - nothing
+  - todo: 最近輸入
+- 有輸入
+  - 無結果
+    - =>無預測
+  - 完全相同=>候選 1
+    - 與別名一致
+      - 顯示別名(法規名稱)
+    - 與法規名稱一致
+      - 顯示法規名稱(別名)
+        - if 沒有別名僅顯示名稱
+  - 部份相同=>候選 5
+    - 與別名部份相同
+      - 顯示別名..
+    - 顯示法規名稱

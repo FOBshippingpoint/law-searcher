@@ -1,4 +1,5 @@
-import type { Law, LawArticle, Option } from "../type/index.type";
+import type { Law, LawArticle, Option, Aliases } from "../type/index.type";
+import { laws, aliases } from "./laws-processor";
 
 const SCORE = {
   PERFECT: 10,
@@ -8,15 +9,17 @@ const SCORE = {
 
 const SEPARATE_TOKEN = ",";
 
-export async function findLawByAlias(laws: Law[], lawName: string) {
+export async function findLawByAlias(lawName: string) {
   let result: Law = null;
 
-  laws.some((law) => {
-    const regex = new RegExp(
-      `^${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}$`
-    );
-    if (regex.test(law.LawAlias)) {
-      result = law;
+  const regex = new RegExp(
+    `^${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}$`
+  );
+
+  Object.entries(aliases).some(([key, value]) => {
+    const alias = value.join(SEPARATE_TOKEN).concat(",");
+    if (regex.test(alias)) {
+      result = laws.find((law) => law.LawName === key);
       return true;
     }
   });
@@ -24,33 +27,28 @@ export async function findLawByAlias(laws: Law[], lawName: string) {
   return result;
 }
 
-export async function findLawsByName(
-  laws: Law[],
-  lawName: string,
-  limit?: number
-) {
-  const found = laws.filter((l) => {
+export async function findLawsByName(lawName: string, limit?: number) {
+  const found = laws.filter((law) => {
     let score = 0;
-    const lawAlias = l.LawAlias;
+    const alias = aliases[law.LawName].join(SEPARATE_TOKEN).concat(",");
     score += new RegExp(
       `^${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}${SEPARATE_TOKEN}|${SEPARATE_TOKEN}${lawName}$`
-    ).test(lawAlias)
+    ).test(alias)
       ? SCORE.PERFECT
       : 0;
     if (lawName.length > 1) {
-      score += new RegExp(lawName).test(lawAlias) ? SCORE.CONNECTED : 0;
+      score += new RegExp(lawName).test(alias) ? SCORE.CONNECTED : 0;
     }
 
     score +=
-      regexCount(lawAlias, `[${lawName}]`) *
+      regexCount(alias, `[${lawName}]`) *
       SCORE.COUNT *
-      Math.exp(-l.LawName.length);
-    l.Score = score;
+      Math.exp(-law.LawName.length);
+    law.Score = score;
     if (score === 0) {
       return false;
     }
 
-    // L.LawNameMatches = intersection(lawName, lawAlias);
     return true;
   });
 

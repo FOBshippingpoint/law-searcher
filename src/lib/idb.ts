@@ -1,66 +1,13 @@
 import { openDB, DBSchema } from "idb";
-
-async function demo() {
-  const db = await openDB("Articles", 1, {
-    upgrade(db) {
-      // Create a store of objects
-      const store = db.createObjectStore("articles", {
-        // The 'id' property of the object will be the key.
-        keyPath: "id",
-        // If it isn't explicitly set, create a value by auto incrementing.
-        autoIncrement: true,
-      });
-      // Create an index on the 'date' property of the objects.
-      store.createIndex("date", "date");
-    },
-  });
-
-  // Add an article:
-  await db.add("articles", {
-    title: "Article 1",
-    date: new Date("2019-01-01"),
-    body: "…",
-  });
-
-  // Add multiple articles in one transaction:
-  {
-    const tx = db.transaction("articles", "readwrite");
-    await Promise.all([
-      tx.store.add({
-        title: "Article 2",
-        date: new Date("2019-01-01"),
-        body: "…",
-      }),
-      tx.store.add({
-        title: "Article 3",
-        date: new Date("2019-01-02"),
-        body: "…",
-      }),
-      tx.done,
-    ]);
-  }
-
-  // Get all the articles in date order:
-  console.log(await db.getAllFromIndex("articles", "date"));
-
-  // Add 'And, happy new year!' to all articles on 2019-01-01:
-  {
-    const tx = db.transaction("articles", "readwrite");
-    const index = tx.store.index("date");
-
-    for await (const cursor of index.iterate(new Date("2019-01-01"))) {
-      const article = { ...cursor.value };
-      article.body += " And, happy new year!";
-      cursor.update(article);
-    }
-
-    await tx.done;
-  }
-}
-
-import type { ChLaw, Law } from "../type/index.type";
+import type { Aliases, ChLaw, Law } from "../type/index.type";
 
 interface LawDB extends DBSchema {
+  "update-records": {
+    // date time stamp
+    key: number;
+    // ChLaw.UpdateDate: string
+    value: string;
+  };
   laws: {
     key: string;
     value: Law;
@@ -71,33 +18,45 @@ interface LawDB extends DBSchema {
   };
 }
 
-export async function initDB(chLaw: ChLaw) {
-  // TODO: check if chLaw has newer version
-  const { Laws } = chLaw;
-
-  const db = await openDB<LawDB>("law-db", 1, {
+export async function initDB() {
+  let exists = true;
+  await openDB<LawDB>("law-db", 1, {
     upgrade(db) {
+      console.log("upgrade");
+      db.createObjectStore("update-records");
       db.createObjectStore("laws", { keyPath: "LawName" });
       db.createObjectStore("aliases");
+      exists = false;
     },
   });
+  return exists;
+}
 
-  // laws
-  {
-    const tx = db.transaction("laws", "readwrite");
-    await Promise.all([...Laws.map((law) => tx.store.add(law)), tx.done]);
+export async function getLatestUpdateRecord(): Promise<{
+  timestamp: number;
+  date: string;
+}> {
+  const db = await dbConnect();
+  const cursor = await db
+    .transaction("update-records")
+    .store.openCursor(null, "prev");
+  if (cursor) {
+    return {
+      timestamp: cursor.key,
+      date: cursor.value,
+    };
   }
+}
 
-  // alias
-  // {
-  //   const tx = db.transaction("aliases", "readwrite");
-  //   await Promise.all([
-  //     ...Laws.map((law) => tx.store.add([], law.LawName)),
-  //     tx.done,
-  //   ]);
-  // }
+export async function putUpdateRecord(chLawUpdateDate: string) {
+  const db = await dbConnect();
+  db.put("update-records", chLawUpdateDate, Date.now());
+}
 
-  console.log("init");
+export async function putManyLaws(laws: Law[]) {
+  const db = await dbConnect();
+  const tx = db.transaction("laws", "readwrite");
+  await Promise.all([...laws.map((law) => tx.store.put(law)), tx.done]);
 }
 
 export async function setAlias() {
@@ -114,18 +73,42 @@ export async function getLawByName(name: string) {
   return law;
 }
 
+export async function getLaws() {
+  const db = await dbConnect();
+  const laws = await db.getAll("laws");
+
+  return laws;
+}
+
 export async function getAliases() {
   const db = await dbConnect();
-  const aliases = await db.getAll("aliases");
+  const keys = await db.getAllKeys("aliases");
+  const tx = db.transaction("aliases", "readonly");
+  const aliases: Aliases = {};
+  const promises = keys.map(async (key) => {
+    aliases[key] = await tx.store.get(key);
+  });
+  await Promise.all([...promises, tx.done]);
 
   return aliases;
 }
 
-export async function putAlias(name, alias) {
+export async function putAlias(name: string, alias: string[]) {
   const db = await dbConnect();
   await db.put("aliases", alias, name);
 }
 
+export async function putManyAliases(aliases: { [key: string]: string[] }) {
+  const db = await dbConnect();
+  const tx = db.transaction("aliases", "readwrite");
+  await Promise.all([
+    ...Object.entries(aliases).map(([name, alias]) =>
+      tx.store.put(alias, name)
+    ),
+    tx.done,
+  ]);
+}
+
 async function dbConnect() {
-  return await openDB<LawDB>("law-db", 1);
+  return await openDB<LawDB>("law-db");
 }

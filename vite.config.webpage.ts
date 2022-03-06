@@ -6,18 +6,12 @@ import { r, isDev } from "./scripts/utils";
 export default defineConfig({
   plugins: [svelte()],
   build: {
-    outDir: r("dist/extension"),
+    outDir: r("dist/webpage"),
     emptyOutDir: false,
     sourcemap: isDev ? "inline" : false,
     // https://developer.chrome.com/docs/webstore/program_policies/#:~:text=Code%20Readability%20Requirements
     terserOptions: {
       mangle: false,
-    },
-    rollupOptions: {
-      input: {
-        popup: r("src/popup/index.html"),
-        options: r("src/options/index.html"),
-      },
     },
   },
 });

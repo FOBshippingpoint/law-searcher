@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { LawResult, Law } from "../type/index.type";
+  import type { Aliases, LawResult, Law } from "../type/index.type";
   import "carbon-components-svelte/css/white.css";
   import { onMount } from "svelte";
   import hotkeys from "hotkeys-js";
   import { Search } from "carbon-components-svelte";
+  import { TextInputSkeleton } from "carbon-components-svelte";
 
   import {
     StructuredList,
@@ -12,7 +13,6 @@
     StructuredListCell,
     StructuredListBody,
   } from "carbon-components-svelte";
-  import { laws } from "../lib/laws-processor";
   import { Button } from "carbon-components-svelte";
   import { TextInput } from "carbon-components-svelte";
   import { Tabs, Tab, TabContent } from "carbon-components-svelte";
@@ -20,13 +20,51 @@
   import Save16 from "carbon-icons-svelte/lib/Save16";
   import { separateString } from "../lib/args";
   import { CHUNK_SIZE, WAIT_TIME } from "../config";
-
+  import FaceDissatisfied32 from "carbon-icons-svelte/lib/FaceDissatisfied32";
+  import Search16 from "carbon-icons-svelte/lib/Search16";
   import {
     findLawsByName,
     findLawByAlias,
     findArticlesByOption,
   } from "../lib/find";
-  import { saveChLaw } from "../lib/zip";
+  import {
+    getAliases,
+    getLatestUpdateRecord,
+    putManyAliases,
+  } from "../lib/idb";
+  import { onReady, updateChLaw } from "../lib/laws-processor";
+  import CloudDownload16 from "carbon-icons-svelte/lib/CloudDownload16";
+  import browser from "../lib/browser";
+
+  let ready = false;
+  onReady(() => {
+    ready = true;
+
+    getAliases().then((aliases) => {
+      const newItems = [];
+      for (const prop in aliases) {
+        let alias = "";
+        if (aliases[prop].length > 1) {
+          alias = aliases[prop].slice(1).join(",").concat(",");
+        }
+
+        newItems.push({
+          name: prop,
+          alias,
+        });
+      }
+
+      items = newItems;
+      previousAliases = aliases;
+    });
+
+    getLatestUpdateRecord().then((record) => {
+      if (record) {
+        const timestamp = new Date(record.timestamp).toLocaleString();
+        updateInfo = `最後一次更新時間：${timestamp}（${record.date}版）`;
+      }
+    });
+  });
 
   // ! handle error
   onMount(() => {
@@ -42,29 +80,80 @@
 
   let value = "";
   let items: LawItem[] = [];
-  let changed: { [key: string]: string } = {};
+  let inputEls: { [key: string]: HTMLInputElement } = {};
+  let saveDisabled: boolean = false;
+  let updateDisabled: boolean = false;
+  let previousAliases: { [key: string]: string[] };
+  let updateInfo = "";
+  export let isWebpage = false;
 
   $: getFilteredLaws(value).then((lawsFound) => {
-    items = lawsFound.map(({ LawName, LawAlias }) => {
+    if (!ready) return;
+
+    items = lawsFound.map(({ LawName }) => {
+      let alias = "";
+      if (previousAliases && previousAliases[LawName].length > 1) {
+        alias = previousAliases[LawName].slice(1).join(",").concat(",");
+      }
+
       return {
         name: LawName,
-        alias: separateString(LawAlias, /,/)[1].slice(1),
+        alias,
       };
     });
   });
 
   async function getFilteredLaws(name: string) {
-    const lawsFound = await findLawsByName(laws, name);
-    console.log(lawsFound);
+    if (!ready) return;
+
+    const lawsFound = await findLawsByName(name);
     return lawsFound;
   }
 
-  function handleChange({ name, alias }) {
-    // add change
-    changed[name] = alias;
+  async function handleSave() {
+    saveDisabled = true;
+
+    const aliases: Aliases = {};
+
+    // filter object to get only value is not null
+    Object.keys(inputEls).forEach((key) => {
+      if (inputEls[key]) {
+        const value = inputEls[key].value;
+        const newAlias = [key, ...value.split(",").filter((v) => v.length > 0)];
+        if (newAlias !== previousAliases[key]) {
+          aliases[key] = newAlias;
+        }
+      }
+    });
+
+    try {
+      await putManyAliases(aliases);
+      previousAliases = aliases;
+      console.log("saved");
+    } catch (err) {
+      console.log(err);
+    } finally {
+      saveDisabled = false;
+    }
   }
 
-  function handleSave() {}
+  async function handleUpdate() {
+    updateDisabled = true;
+
+    try {
+      const { date, msg } = await updateChLaw();
+      if (msg === "No need to update") {
+        updateInfo = `法規已是最新版本（${date}版）`;
+      } else {
+        updateInfo = `法規更新成功（${date}版）`;
+      }
+    } catch (err) {
+      updateInfo = "法規更新失敗:(";
+      console.log(err);
+    } finally {
+      updateDisabled = false;
+    }
+  }
 
   function wait(idx: number) {
     // if is first then don't wait
@@ -83,66 +172,84 @@
 </script>
 
 <main>
-  <!-- <Tabs autoWidth>
-    <Tab label="Tab label 1" />
-    <Tab label="Tab label 2" />
-    <Tab label="Tab label 3" />
+  <Tabs autoWidth>
+    <Tab label="法規別名" />
+    <Tab label="法規更新" />
+    <Tab label="其他" />
     <svelte:fragment slot="content">
-      <TabContent>Content 1</TabContent>
-      <TabContent>Content 2</TabContent>
+      <TabContent>
+        <content>
+          <Search
+            disabled={!ready}
+            placeholder={ready ? "搜尋法規名稱或別名" : "載入中..."}
+            bind:value
+            autofocus
+          />
+          <Button
+            size="small"
+            icon={Save16}
+            on:click={handleSave}
+            disabled={saveDisabled}>儲存</Button
+          >
+          <StructuredList condensed>
+            <StructuredListHead>
+              <StructuredListRow head>
+                <StructuredListCell head>法規</StructuredListCell>
+                <StructuredListCell head>別名</StructuredListCell>
+              </StructuredListRow>
+            </StructuredListHead>
+            <StructuredListBody>
+              {#if items.length === 0}
+                <div class="not-found">沒有關於"{value}"的法規</div>
+              {:else}
+                {#each Array(Math.floor(items.length / CHUNK_SIZE) + 1).fill(true) as whatever, i}
+                  {#await wait(i) then show}
+                    {#each items.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) as { name, alias } (name)}
+                      <StructuredListRow label for="row-{name}">
+                        <StructuredListCell>{name}</StructuredListCell>
+                        <StructuredListCell>
+                          <TextInput
+                            placeholder="請以<,>進行分隔"
+                            value={alias}
+                            bind:ref={inputEls[name]}
+                          />
+                        </StructuredListCell>
+                      </StructuredListRow>
+                    {/each}
+                  {/await}
+                {/each}
+              {/if}
+            </StructuredListBody>
+          </StructuredList>
+        </content>
+      </TabContent>
+      <TabContent>
+        <content>
+          <Button
+            icon={CloudDownload16}
+            on:click={handleUpdate}
+            disabled={updateDisabled}
+            >{updateDisabled ? "下載中..." : "更新法規"}</Button
+          >
+          <p>{updateInfo}</p>
+        </content>
+      </TabContent>
       <TabContent>Content 3</TabContent>
     </svelte:fragment>
-  </Tabs> -->
-  <Button size="small" icon={Save16} on:click={saveChLaw}>zip</Button>
-  <Search placeholder="搜尋法規名稱或別名" bind:value />
-  <Button size="small" icon={Save16} on:click={handleSave}>儲存</Button>
-  <StructuredList condensed>
-    <StructuredListHead>
-      <StructuredListRow head>
-        <StructuredListCell head>法規</StructuredListCell>
-        <StructuredListCell head>別名</StructuredListCell>
-      </StructuredListRow>
-    </StructuredListHead>
-    <StructuredListBody>
-      {#each Array(Math.floor(items.length / CHUNK_SIZE) + 1).fill(true) as whatever, i}
-        {#await wait(i) then show}
-          {#each items.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) as { name, alias }}
-            <StructuredListRow label for="row-{name}">
-              <StructuredListCell>{name}</StructuredListCell>
-              <StructuredListCell>
-                <TextInput
-                  bind:value={alias}
-                  placeholder="請以<,>進行分隔"
-                  on:input={() => {
-                    handleChange({ name, alias });
-                  }}
-                />
-              </StructuredListCell>
-            </StructuredListRow>
-          {/each}
-        {/await}
-      {/each}
-    </StructuredListBody>
-  </StructuredList>
-  <div class="notification">
-    <InlineNotification
-      kind="success"
-      title="Success:"
-      subtitle="Your settings have been saved."
-    />
-  </div>
+  </Tabs>
 </main>
 
 <style>
   main {
-    display: grid;
     padding: 0.5rem;
+  }
+
+  content {
+    display: grid;
     row-gap: 0.5rem;
   }
 
-  .notification {
-    position: fixed;
-    bottom: 0;
-    left: 1rem;
+  .not-found {
+    margin-top: 1rem;
   }
 </style>

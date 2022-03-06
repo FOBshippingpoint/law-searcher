@@ -1,14 +1,17 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
   import type { LawResult } from "../type/index.type";
   import "carbon-components-svelte/css/white.css";
-  import { Button, ListBox } from "carbon-components-svelte";
+  import { Button } from "carbon-components-svelte";
   import Add16 from "carbon-icons-svelte/lib/Add16";
   import Subtract16 from "carbon-icons-svelte/lib/Subtract16";
   import { onMount } from "svelte";
   import hotkeys from "hotkeys-js";
   import Search from "./Search.svelte";
-  import Law from "./Law.svelte";
+  import LawComponent from "./Law.svelte";
   import { CHUNK_SIZE, WAIT_TIME } from "../config";
+  import Settings16 from "carbon-icons-svelte/lib/Settings16";
+  import browser from "../lib/browser";
 
   // ! handle error
   onMount(() => {
@@ -23,6 +26,8 @@
   let idx = 0;
   let lawResults: LawResult[] = [];
   let expanding = true;
+  export const isWebpage = false;
+  const dispatch = createEventDispatcher();
 
   hotkeys("s", (e) => {
     if (!canFocus) return;
@@ -45,6 +50,16 @@
     lawResults = lawResults;
   }
 
+  function handleSettings() {
+    if (browser) {
+      browser.runtime.openOptionsPage();
+      return;
+    }
+
+    dispatch("openOptions");
+    return;
+  }
+
   function wait() {
     return new Promise<boolean>((resolve) => {
       setTimeout(() => {
@@ -56,7 +71,7 @@
 
 <main>
   <div>
-    {#each searchs as search, i}
+    {#each searchs as whatever, i}
       <Search
         bind:this={searchRefs[i]}
         on:search={(e) => {
@@ -78,13 +93,21 @@
       icon={Subtract16}
       on:click={handleRemove}
     />
+    {#if !isWebpage}
+      <Button
+        size="small"
+        kind="ghost"
+        iconDescription="Settings"
+        icon={Settings16}
+        on:click={handleSettings}
+      />
+    {/if}
   </div>
   {#each lawResults as law, i (i)}
-    <!-- 算法可能有BUG -->
     {#each Array(Math.floor(law.articles.length / CHUNK_SIZE) + 1).fill(true) as asdf, j}
       {#await wait() then show}
         {#if show}
-          <Law
+          <LawComponent
             name={law.name}
             articles={law.articles.slice(j * CHUNK_SIZE, (j + 1) * CHUNK_SIZE)}
           />
